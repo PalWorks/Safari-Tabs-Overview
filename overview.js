@@ -23,8 +23,64 @@ async function init() {
         searchInput.addEventListener('input', handleSearch);
         searchInput.focus();
 
+        // 5. Setup Theme
+        initTheme();
+
     } catch (error) {
         console.error('Initialization failed:', error);
+    }
+}
+
+// Theme Logic
+const MODES = ['system', 'light', 'dark'];
+let currentModeIndex = 0;
+
+function initTheme() {
+    const toggleBtn = document.getElementById('theme-toggle');
+
+    // Load saved preference
+    const savedMode = localStorage.getItem('theme_preference') || 'system';
+    currentModeIndex = MODES.indexOf(savedMode);
+    if (currentModeIndex === -1) currentModeIndex = 0;
+
+    applyTheme(MODES[currentModeIndex]);
+
+    toggleBtn.addEventListener('click', () => {
+        currentModeIndex = (currentModeIndex + 1) % MODES.length;
+        const newMode = MODES[currentModeIndex];
+        applyTheme(newMode);
+        localStorage.setItem('theme_preference', newMode);
+    });
+
+    // Listen for system changes if in system mode
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (MODES[currentModeIndex] === 'system') {
+            applyTheme('system');
+        }
+    });
+}
+
+function applyTheme(mode) {
+    const body = document.body;
+    const toggleBtn = document.getElementById('theme-toggle');
+
+    let isDark = false;
+
+    if (mode === 'system') {
+        isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        toggleBtn.title = "Theme: System";
+    } else if (mode === 'dark') {
+        isDark = true;
+        toggleBtn.title = "Theme: Dark";
+    } else {
+        isDark = false;
+        toggleBtn.title = "Theme: Light";
+    }
+
+    if (isDark) {
+        body.classList.remove('light-theme');
+    } else {
+        body.classList.add('light-theme');
     }
 }
 
