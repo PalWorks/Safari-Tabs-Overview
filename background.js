@@ -4,6 +4,41 @@ import { db } from './db.js';
 const SCREENSHOT_QUALITY = 50; // 0-100
 const MAX_WIDTH = 640; // Resize to this width to save space
 
+// Resize image using OffscreenCanvas
+async function resizeImage(dataUrl, targetWidth) {
+    try {
+        // Create a bitmap from the Data URL
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const bitmap = await createImageBitmap(blob);
+
+        // Calculate new height
+        const aspectRatio = bitmap.height / bitmap.width;
+        const targetHeight = Math.round(targetWidth * aspectRatio);
+
+        // Create OffscreenCanvas
+        const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+
+        // Convert back to Blob/DataURL (WebP for better compression)
+        const compressedBlob = await canvas.convertToBlob({
+            type: 'image/webp',
+            quality: 0.8
+        });
+
+        // Convert Blob to DataURL for storage
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(compressedBlob);
+        });
+    } catch (error) {
+        console.error('Resize failed, using original:', error);
+        return dataUrl; // Fallback to original if resize fails
+    }
+}
+
 async function captureAndSaveTab(tabId) {
     try {
         const tab = await chrome.tabs.get(tabId);
@@ -25,11 +60,10 @@ async function captureAndSaveTab(tabId) {
             });
 
             if (dataUrl) {
-                // Optional: Resize image before saving to save even more space
-                // For now, we'll save the raw capture (which is already compressed by quality setting)
-                // To resize, we'd need an OffscreenCanvas or similar, which is complex in SW.
-                // Let's stick to the quality setting for now.
-                await db.saveScreenshot(tabId, dataUrl);
+                // Resize image before saving to save space (Target width 600px)
+                const resizedDataUrl = await resizeImage(dataUrl, 600);
+
+                await db.saveScreenshot(tabId, resizedDataUrl);
                 console.log(`Saved screenshot for tab ${tabId}`);
             }
         }
@@ -70,6 +104,20 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 });
 
 // Handle the extension action click
-chrome.action.onClicked.addListener(() => {
-    chrome.tabs.create({ url: 'overview.html' });
+// Handle the extension action click
+chrome.action.onClicked.addListener(async () => {
+    const url = chrome.runtime.getURL('overview.html');
+
+    // Check if the overview tab is already open
+    const tabs = await chrome.tabs.query({ url: url });
+
+    if (tabs.length > 0) {
+        // If open, activate the first one and reload it
+        const tab = tabs[0];
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.tabs.reload(tab.id);
+    } else {
+        // If not open, create a new one
+        await chrome.tabs.create({ url: 'overview.html' });
+    }
 });

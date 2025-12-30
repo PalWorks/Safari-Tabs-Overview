@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../Bookmark-Preview-as-Thumbnails"
 		}
 	],
 	"settings": {}
