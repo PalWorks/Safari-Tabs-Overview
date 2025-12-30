@@ -1,0 +1,41 @@
+{
+    "manifest_version": 3,
+    "name": "Safari-Style Tabs Overview",
+    "version": "1.0",
+    "description": "A visual overview of all open tabs, similar to Safari.",
+    "permissions": [
+        "tabs",
+        "activeTab",
+        "storage",
+        "unlimitedStorage"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "action": {
+        "default_title": "Tabs Overview",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "commands": {
+        "_execute_action": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+U",
+                "mac": "Command+Shift+U"
+            },
+            "description": "Open Tabs Overview"
+        }
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    }
+}

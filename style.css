@@ -1,0 +1,149 @@
+:root {
+    --bg-color: #1e1e1e;
+    --card-bg: #2c2c2c;
+    --text-color: #ffffff;
+    --accent-color: #007aff;
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --card-radius: 12px;
+    --transition: 0.2s ease;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow-y: auto;
+}
+
+.container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.search-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+    position: sticky;
+    top: 20px;
+    z-index: 100;
+}
+
+#search-input {
+    width: 400px;
+    padding: 12px 20px;
+    border-radius: 24px;
+    border: none;
+    background-color: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 16px;
+    backdrop-filter: blur(10px);
+    transition: var(--transition);
+    outline: none;
+    text-align: center;
+}
+
+#search-input:focus {
+    background-color: rgba(255, 255, 255, 0.25);
+    width: 450px;
+    box-shadow: 0 0 0 2px var(--accent-color);
+}
+
+.tabs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    padding-bottom: 40px;
+}
+
+.tab-card {
+    background-color: var(--card-bg);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: transform var(--transition), opacity var(--transition);
+    cursor: pointer;
+    position: relative;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-card:hover {
+    transform: scale(1.03);
+    z-index: 10;
+}
+
+.tab-header {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.2);
+    font-size: 12px;
+}
+
+.tab-favicon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+}
+
+.tab-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1;
+    opacity: 0.9;
+}
+
+.tab-thumbnail {
+    flex-grow: 1;
+    background-size: cover;
+    background-position: top center;
+    background-repeat: no-repeat;
+    background-color: #333;
+    position: relative;
+}
+
+.tab-thumbnail.fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.2);
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.close-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 20;
+}
+
+.tab-card:hover .close-btn {
+    opacity: 1;
+}
+
+.close-btn:hover {
+    background-color: #ff3b30;
+}
+
+.hidden {
+    display: none;
+}
