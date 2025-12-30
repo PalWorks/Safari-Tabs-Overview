@@ -5,6 +5,7 @@
     "description": "A visual overview of all open tabs, similar to Safari.",
     "permissions": [
         "tabs",
+        "tabGroups",
         "activeTab",
         "storage",
         "unlimitedStorage"

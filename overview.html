@@ -9,15 +9,74 @@
 </head>
 
 <body>
-    <div class="container">
-        <div class="search-container">
-            <input type="text" id="search-input" placeholder="Search tabs..." autocomplete="off">
-        </div>
-        <button id="theme-toggle" class="theme-toggle" title="Toggle Theme">
-            <img src="icons/theme_toggle.png" alt="Theme">
-        </button>
-        <div id="tabs-grid" class="tabs-grid">
-            <!-- Tab cards will be injected here -->
+    <div class="app-container">
+        <!-- Global Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <button id="sidebar-toggle" class="icon-btn" title="Toggle Sidebar">
+                    ☰
+                </button>
+                <span id="sidebar-title" class="header-title">TAB GROUPS</span>
+            </div>
+
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search tabs..." autocomplete="off">
+            </div>
+
+            <div class="header-right">
+                <div id="sort-container" class="sort-container">
+                    <button id="sort-btn" class="icon-btn" title="Sort Tabs">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                            <path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z" />
+                        </svg>
+                    </button>
+                    <div id="sort-menu" class="sort-menu hidden">
+                        <div class="sort-option" data-sort="title-asc">Title (A-Z)</div>
+                        <div class="sort-option" data-sort="title-desc">Title (Z-A)</div>
+                        <div class="sort-option" data-sort="domain-asc">Domain (A-Z)</div>
+                        <div class="sort-option" data-sort="domain-desc">Domain (Z-A)</div>
+                        <div class="sort-option" data-sort="date-newest">Date Added (Newest)</div>
+                        <div class="sort-option" data-sort="date-oldest">Date Added (Oldest)</div>
+                    </div>
+                </div>
+
+                <button id="theme-toggle" class="theme-toggle" title="Toggle Theme">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                        <path
+                            d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- App Body (Sidebar + Main Content) -->
+        <div class="app-body">
+            <!-- Sidebar -->
+            <div id="sidebar" class="sidebar hidden">
+                <div class="sidebar-header">
+                    <!-- Title moved to global header -->
+                </div>
+                <div id="sidebar-list" class="sidebar-list">
+                    <!-- Sidebar items injected here -->
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="container">
+                    <div class="view-header">
+                        <button id="back-btn" class="icon-btn hidden" title="Back to All Tabs">
+                            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </button>
+                        <h2 id="view-title">All Tabs</h2>
+                    </div>
+                    <div id="tabs-grid" class="tabs-grid">
+                        <!-- Tab cards will be injected here -->
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script type="module" src="overview.js"></script>
