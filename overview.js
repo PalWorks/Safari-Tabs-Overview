@@ -14,6 +14,7 @@ let tabGroups = [];
 let screenshots = {};
 let currentFilter = 'all'; // 'all' or groupId
 let currentSort = 'date-newest'; // Default sort
+let showTabGroups = false; // Default: Flattened view
 
 // SVG Icons
 const FOLDER_ICON_SVG = `
@@ -22,6 +23,13 @@ const FOLDER_ICON_SVG = `
 </svg>`;
 
 const GENERIC_FAVICON_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999' width='16' height='16'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z'/%3E%3C/svg%3E`;
+
+// Auto-Generate Previews State
+let isGeneratingPreviews = false;
+let stopGenerationFlag = false;
+const CAPTURE_DELAY = 800; // ms
+
+// ... (Existing code) ...
 
 async function init() {
     try {
@@ -53,16 +61,140 @@ async function init() {
         // 6. Setup Sorting
         setupSorting();
 
-        // 7. Auto-Refresh on Tab Focus
+        // 7. Setup Preview Generation
+        setupPreviewControls();
+
+        // 8. Auto-Refresh on Tab Focus
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
                 refreshData();
             }
         });
 
+        // 9. Check Auto-Generate Setting
+        const autoGenerate = localStorage.getItem('autoGeneratePreviews') === 'true';
+        if (autoGenerate) {
+            // Small delay to allow initial render
+            setTimeout(() => {
+                startPreviewGeneration();
+            }, 1000);
+        }
+
+        // 10. Check Show Groups Setting
+        showTabGroups = localStorage.getItem('showTabGroups') === 'true';
+
+        // 10. Check Show Groups Setting
+        showTabGroups = localStorage.getItem('showTabGroups') === 'true';
+
     } catch (error) {
         console.error('Initialization failed:', error);
     }
+}
+
+function setupPreviewControls() {
+    const playBtn = document.getElementById('preview-play-btn');
+    const stopBtn = document.getElementById('preview-stop-btn');
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsMenu = document.getElementById('settings-menu');
+    const autoGenerateCheck = document.getElementById('auto-generate-check');
+
+    if (playBtn) playBtn.addEventListener('click', startPreviewGeneration);
+    if (stopBtn) stopBtn.addEventListener('click', stopPreviewGeneration);
+
+    // Settings Menu Toggle
+    if (settingsBtn && settingsMenu) {
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            settingsMenu.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!settingsMenu.contains(e.target) && !settingsBtn.contains(e.target)) {
+                settingsMenu.classList.add('hidden');
+            }
+        });
+    }
+
+    // Auto-Generate Setting
+    if (autoGenerateCheck) {
+        autoGenerateCheck.checked = localStorage.getItem('autoGeneratePreviews') === 'true';
+        autoGenerateCheck.addEventListener('change', (e) => {
+            localStorage.setItem('autoGeneratePreviews', e.target.checked);
+        });
+    }
+}
+
+async function startPreviewGeneration() {
+    if (isGeneratingPreviews) return;
+    isGeneratingPreviews = true;
+    stopGenerationFlag = false;
+
+    const playBtn = document.getElementById('preview-play-btn');
+    const stopBtn = document.getElementById('preview-stop-btn');
+
+    if (playBtn) playBtn.classList.add('hidden');
+    if (stopBtn) stopBtn.classList.remove('hidden');
+
+    try {
+        // Get current active tab (extension tab) to return to
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const initialTabId = activeTab?.id;
+
+        // Identify tabs needing screenshots
+        const tabsToCapture = allTabs.filter(tab => {
+            const hasScreenshot = screenshots[tab.id];
+            const isSystem = tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:');
+            return !hasScreenshot && !isSystem;
+        });
+
+        if (tabsToCapture.length === 0) {
+            // Optional: Alert user? Or just silently finish.
+            // alert('All tabs already have previews!');
+        } else {
+            for (const tab of tabsToCapture) {
+                if (stopGenerationFlag) break;
+
+                try {
+                    // Activate Tab
+                    await chrome.tabs.update(tab.id, { active: true });
+
+                    // Wait for render
+                    await new Promise(resolve => setTimeout(resolve, CAPTURE_DELAY));
+
+                    // Capture
+                    const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 50 });
+
+                    // Save
+                    await db.saveScreenshot(tab.id, dataUrl);
+
+                    // Update local cache
+                    screenshots[tab.id] = dataUrl;
+
+                } catch (e) {
+                    console.error('Failed to capture tab:', tab.id, e);
+                }
+            }
+        }
+
+        // Restore initial tab
+        if (initialTabId) {
+            await chrome.tabs.update(initialTabId, { active: true });
+        }
+
+        // Refresh UI
+        renderGrid();
+
+    } catch (error) {
+        console.error('Preview generation error:', error);
+    } finally {
+        isGeneratingPreviews = false;
+        if (playBtn) playBtn.classList.remove('hidden');
+        if (stopBtn) stopBtn.classList.add('hidden');
+    }
+}
+
+function stopPreviewGeneration() {
+    stopGenerationFlag = true;
 }
 
 async function refreshData() {
@@ -262,22 +394,29 @@ function renderGrid() {
         // 2. Show Loose Tabs (groupId === -1)
 
         // Render Group Cards first
-        tabGroups.forEach(group => {
-            // Check if group matches search (if search exists)
-            // OR if any tab in group matches search
-            const groupTabs = allTabs.filter(t => t.groupId === group.id);
-            const matchesSearch = !query ||
-                (group.title && group.title.toLowerCase().includes(query)) ||
-                groupTabs.some(t => t.title.toLowerCase().includes(query) || t.url.toLowerCase().includes(query));
+        // Render Group Cards first (ONLY if showTabGroups is TRUE)
+        if (showTabGroups) {
+            tabGroups.forEach(group => {
+                // Check if group matches search (if search exists)
+                // OR if any tab in group matches search
+                const groupTabs = allTabs.filter(t => t.groupId === group.id);
+                const matchesSearch = !query ||
+                    (group.title && group.title.toLowerCase().includes(query)) ||
+                    groupTabs.some(t => t.title.toLowerCase().includes(query) || t.url.toLowerCase().includes(query));
 
-            if (matchesSearch) {
-                const card = createGroupCard(group, groupTabs.length);
-                grid.appendChild(card);
-            }
-        });
+                if (matchesSearch) {
+                    const card = createGroupCard(group, groupTabs.length);
+                    grid.appendChild(card);
+                }
+            });
+        }
 
-        // Render Loose Tabs
-        tabsToRender = allTabs.filter(t => t.groupId === -1);
+        // Render Loose Tabs (OR ALL tabs if showTabGroups is FALSE)
+        if (showTabGroups) {
+            tabsToRender = allTabs.filter(t => t.groupId === -1);
+        } else {
+            tabsToRender = [...allTabs]; // Copy all tabs
+        }
 
     } else {
         // Specific Group View
@@ -411,6 +550,48 @@ function createTabCard(tab) {
     card.appendChild(closeBtn);
     card.appendChild(thumbnail);
 
+    // More Options Button (3 dots)
+    const moreBtn = document.createElement('div');
+    moreBtn.className = 'more-options-btn';
+    moreBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+        </svg>
+    `;
+
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleContextMenu(e, tab, card);
+    });
+    card.appendChild(moreBtn);
+
+    // Group Pill (if flattened view and tab belongs to a group)
+    if (!showTabGroups && tab.groupId !== -1) {
+        const group = tabGroups.find(g => g.id === tab.groupId);
+        if (group) {
+            const pill = document.createElement('div');
+            pill.className = 'group-pill';
+            pill.textContent = group.title || 'Untitled Group';
+
+            // Color mapping
+            const colorMap = {
+                grey: '#5f6368',
+                blue: '#1a73e8',
+                red: '#d93025',
+                yellow: '#f9ab00',
+                green: '#188038',
+                pink: '#e52592',
+                purple: '#9334e6',
+                cyan: '#12b5cb',
+                orange: '#fa903e'
+            };
+            const color = colorMap[group.color] || group.color;
+            pill.style.backgroundColor = color;
+
+            card.appendChild(pill);
+        }
+    }
+
     return card;
 }
 
@@ -495,3 +676,119 @@ function applyTheme(mode) {
 }
 
 init();
+
+function toggleContextMenu(event, tab, card) {
+    // Close existing menu if any
+    const existingMenu = document.querySelector('.tab-context-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+        // If clicking same button, just close
+        if (existingMenu.dataset.tabId == tab.id) return;
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'tab-context-menu';
+    menu.dataset.tabId = tab.id;
+
+    // Menu Items
+    const items = [
+        { label: 'Reload', icon: '<path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>', action: () => chrome.tabs.reload(tab.id) },
+        { label: 'Duplicate', icon: '<path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>', action: () => chrome.tabs.duplicate(tab.id) },
+        { label: tab.pinned ? 'Unpin' : 'Pin', icon: '<path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/>', action: () => chrome.tabs.update(tab.id, { pinned: !tab.pinned }) },
+        { label: tab.mutedInfo.muted ? 'Unmute site' : 'Mute site', icon: '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>', action: () => chrome.tabs.update(tab.id, { muted: !tab.mutedInfo.muted }) },
+        { separator: true },
+        { label: 'Close', icon: '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>', action: () => closeTab(tab.id, card) },
+        { label: 'Close other tabs', icon: '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>', action: () => closeOtherTabs(tab) },
+        { label: 'Close tabs to the right', icon: '<path d="M14 6l-1.41 1.41L16.17 11H4v2h12.17l-3.58 3.59L14 18l6-6z"/>', action: () => closeTabsToRight(tab) },
+        { separator: true },
+        { label: 'Move tab to new window', icon: '<path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>', action: () => chrome.windows.create({ tabId: tab.id }) },
+    ];
+
+    items.forEach(item => {
+        if (item.separator) {
+            const sep = document.createElement('div');
+            sep.className = 'context-menu-separator';
+            menu.appendChild(sep);
+        } else {
+            const el = document.createElement('div');
+            el.className = 'context-menu-item';
+            el.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${item.icon}</svg> ${item.label}`;
+            el.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                await item.action();
+                // Refresh data for most actions, except Close which handles itself
+                if (item.label !== 'Close') {
+                    setTimeout(refreshData, 300);
+                }
+            });
+            menu.appendChild(el);
+        }
+    });
+
+    document.body.appendChild(menu);
+
+    // Positioning Logic
+    const buttonRect = event.target.closest('.more-options-btn').getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    let top = buttonRect.bottom + 5;
+    let left = buttonRect.right - menuRect.width;
+
+    // Check bottom edge
+    if (top + menuRect.height > windowHeight) {
+        top = buttonRect.top - menuRect.height - 5;
+    }
+
+    // Check right edge (though we align right, just in case)
+    if (left + menuRect.width > windowWidth) {
+        left = windowWidth - menuRect.width - 10;
+    }
+
+    // Check left edge
+    if (left < 0) {
+        left = 10;
+    }
+
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+
+    // Close on outside click, scroll, or resize
+    const closeMenu = (e) => {
+        if (e.type === 'click' && menu.contains(e.target)) return;
+
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+        window.removeEventListener('scroll', closeMenu, true);
+        window.removeEventListener('resize', closeMenu);
+    };
+
+    // Delay adding listener to avoid immediate trigger
+    setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+        window.addEventListener('scroll', closeMenu, true); // Capture phase for scroll
+        window.addEventListener('resize', closeMenu);
+    }, 0);
+}
+
+async function closeOtherTabs(currentTab) {
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    const tabsToClose = tabs.filter(t => t.id !== currentTab.id && !t.pinned);
+    const ids = tabsToClose.map(t => t.id);
+    if (ids.length > 0) {
+        await chrome.tabs.remove(ids);
+        refreshData();
+    }
+}
+
+async function closeTabsToRight(currentTab) {
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    const tabsToClose = tabs.filter(t => t.index > currentTab.index && !t.pinned);
+    const ids = tabsToClose.map(t => t.id);
+    if (ids.length > 0) {
+        await chrome.tabs.remove(ids);
+        refreshData();
+    }
+}
