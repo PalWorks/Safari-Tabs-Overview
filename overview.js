@@ -677,7 +677,7 @@ function applyTheme(mode) {
 
 init();
 
-function toggleContextMenu(event, tab, card) {
+async function toggleContextMenu(event, tab, card) {
     // Close existing menu if any
     const existingMenu = document.querySelector('.tab-context-menu');
     if (existingMenu) {
@@ -690,6 +690,9 @@ function toggleContextMenu(event, tab, card) {
     menu.className = 'tab-context-menu';
     menu.dataset.tabId = tab.id;
 
+    // Fetch groups for the submenu
+    const groups = await chrome.tabGroups.query({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+
     // Menu Items
     const items = [
         { label: 'Reload', icon: '<path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>', action: () => chrome.tabs.reload(tab.id) },
@@ -697,35 +700,99 @@ function toggleContextMenu(event, tab, card) {
         { label: tab.pinned ? 'Unpin' : 'Pin', icon: '<path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/>', action: () => chrome.tabs.update(tab.id, { pinned: !tab.pinned }) },
         { label: tab.mutedInfo.muted ? 'Unmute site' : 'Mute site', icon: '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>', action: () => chrome.tabs.update(tab.id, { muted: !tab.mutedInfo.muted }) },
         { separator: true },
+        {
+            label: 'Add tab to group',
+            icon: '<path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>',
+            submenu: [
+                {
+                    label: 'New group',
+                    icon: '<path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>',
+                    action: () => chrome.tabs.group({ tabIds: tab.id })
+                },
+                ...(groups.length > 0 ? [{ separator: true }] : []),
+                ...groups.map(g => ({
+                    label: g.title || 'Untitled Group',
+                    icon: `<circle cx="12" cy="12" r="8" fill="${g.color}"/>`, // Simplified color dot
+                    action: () => chrome.tabs.group({ tabIds: tab.id, groupId: g.id })
+                }))
+            ]
+        },
+        { label: 'Move tab to new window', icon: '<path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>', action: () => chrome.windows.create({ tabId: tab.id }) },
+        { separator: true },
         { label: 'Close', icon: '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>', action: () => closeTab(tab.id, card) },
         { label: 'Close other tabs', icon: '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>', action: () => closeOtherTabs(tab) },
         { label: 'Close tabs to the right', icon: '<path d="M14 6l-1.41 1.41L16.17 11H4v2h12.17l-3.58 3.59L14 18l6-6z"/>', action: () => closeTabsToRight(tab) },
-        { separator: true },
-        { label: 'Move tab to new window', icon: '<path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>', action: () => chrome.windows.create({ tabId: tab.id }) },
     ];
 
-    items.forEach(item => {
-        if (item.separator) {
-            const sep = document.createElement('div');
-            sep.className = 'context-menu-separator';
-            menu.appendChild(sep);
-        } else {
-            const el = document.createElement('div');
-            el.className = 'context-menu-item';
-            el.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${item.icon}</svg> ${item.label}`;
-            el.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                menu.remove();
-                await item.action();
-                // Refresh data for most actions, except Close which handles itself
-                if (item.label !== 'Close') {
-                    setTimeout(refreshData, 300);
-                }
-            });
-            menu.appendChild(el);
-        }
-    });
+    const renderItems = (itemList, container) => {
+        itemList.forEach(item => {
+            if (item.separator) {
+                const sep = document.createElement('div');
+                sep.className = 'context-menu-separator';
+                container.appendChild(sep);
+            } else {
+                const el = document.createElement('div');
+                el.className = `context-menu-item ${item.submenu ? 'has-submenu' : ''}`;
 
+                // 1. Icon Container
+                const iconContainer = document.createElement('div');
+                iconContainer.className = 'menu-icon';
+
+                if (item.icon) {
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('viewBox', '0 0 24 24');
+                    // Check if it's a circle (for groups) or path
+                    if (item.icon.trim().startsWith('<circle')) {
+                        svg.setAttribute('fill', 'none');
+                    } else {
+                        svg.setAttribute('fill', 'currentColor');
+                    }
+                    svg.innerHTML = item.icon; // Safe to inject path/circle string
+                    iconContainer.appendChild(svg);
+                }
+                el.appendChild(iconContainer);
+
+                // 2. Label
+                const label = document.createElement('div');
+                label.className = 'menu-label';
+                label.textContent = item.label;
+                el.appendChild(label);
+
+                // 3. End Slot (Arrow)
+                const endSlot = document.createElement('div');
+                endSlot.className = 'menu-end-slot';
+                if (item.submenu) {
+                    const arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    arrowSvg.setAttribute('viewBox', '0 0 24 24');
+                    arrowSvg.setAttribute('fill', 'currentColor');
+                    arrowSvg.classList.add('arrow');
+                    arrowSvg.innerHTML = '<path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>';
+                    endSlot.appendChild(arrowSvg);
+                }
+                el.appendChild(endSlot);
+
+                // 4. Submenu
+                if (item.submenu) {
+                    const submenu = document.createElement('div');
+                    submenu.className = 'context-submenu';
+                    renderItems(item.submenu, submenu);
+                    el.appendChild(submenu);
+                } else {
+                    el.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        menu.remove();
+                        await item.action();
+                        if (item.label !== 'Close') {
+                            setTimeout(refreshData, 300);
+                        }
+                    });
+                }
+                container.appendChild(el);
+            }
+        });
+    };
+
+    renderItems(items, menu);
     document.body.appendChild(menu);
 
     // Positioning Logic
@@ -742,7 +809,7 @@ function toggleContextMenu(event, tab, card) {
         top = buttonRect.top - menuRect.height - 5;
     }
 
-    // Check right edge (though we align right, just in case)
+    // Check right edge
     if (left + menuRect.width > windowWidth) {
         left = windowWidth - menuRect.width - 10;
     }
