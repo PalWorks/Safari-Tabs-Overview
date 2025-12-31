@@ -27,6 +27,7 @@ const GENERIC_FAVICON_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 // Auto-Generate Previews State
 let isGeneratingPreviews = false;
 let stopGenerationFlag = false;
+let activeCaptureWindowId = null; // Track window globally for Stop button
 const CAPTURE_DELAY = 800; // ms
 
 // ... (Existing code) ...
@@ -132,8 +133,7 @@ async function startPreviewGeneration() {
     const playBtn = document.getElementById('preview-play-btn');
     const stopBtn = document.getElementById('preview-stop-btn');
 
-    if (playBtn) playBtn.classList.add('hidden');
-    if (stopBtn) stopBtn.classList.remove('hidden');
+    if (playBtn) playBtn.classList.add('capturing');
 
     try {
         // Get current active tab (extension tab) to return to
@@ -151,35 +151,158 @@ async function startPreviewGeneration() {
             // Optional: Alert user? Or just silently finish.
             // alert('All tabs already have previews!');
         } else {
-            for (const tab of tabsToCapture) {
-                if (stopGenerationFlag) break;
+            // Offscreen Window Batch Capture Logic
+            const CONCURRENCY_LIMIT = 3;
 
+            // 1. Create Offscreen Window (Dual Strategy)
+            // Strategy A: Create Normal -> Move Offscreen (Preferred, matches Bookmarks)
+            // Strategy B: Create Normal -> Minimize (Fallback for strict OS/Browser bounds)
+
+            let captureWindow;
+            try {
+                captureWindow = await chrome.windows.create({
+                    focused: false,
+                    state: 'normal',
+                    width: 1024,
+                    height: 768
+                });
+
+                if (!captureWindow || !captureWindow.id) throw new Error('Window creation failed');
+
+                activeCaptureWindowId = captureWindow.id; // Store ID globally
+
+                // Try Strategy A: Move Offscreen
                 try {
-                    // Activate Tab
-                    await chrome.tabs.update(tab.id, { active: true });
-
-                    // Wait for render
-                    await new Promise(resolve => setTimeout(resolve, CAPTURE_DELAY));
-
-                    // Capture
-                    const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 50 });
-
-                    // Save
-                    await db.saveScreenshot(tab.id, dataUrl);
-
-                    // Update local cache
-                    screenshots[tab.id] = dataUrl;
-
-                } catch (e) {
-                    console.error('Failed to capture tab:', tab.id, e);
+                    await chrome.windows.update(captureWindow.id, { left: -10000, top: -10000 });
+                } catch (boundsError) {
+                    console.warn('Offscreen move failed, falling back to Minimize strategy:', boundsError);
+                    // Fallback to Strategy B: Minimize
+                    await chrome.windows.update(captureWindow.id, { state: 'minimized' });
                 }
+
+            } catch (e) {
+                console.error('Failed to initialize capture window:', e);
+                isGeneratingPreviews = false;
+                if (playBtn) playBtn.classList.remove('capturing');
+                return;
+            }
+
+            // 2. Prepare Tab Pool (Reuse existing tab + create new ones)
+            const workerTabs = [];
+            const initialWindowTabs = await chrome.tabs.query({ windowId: captureWindow.id });
+            if (initialWindowTabs.length > 0) workerTabs.push(initialWindowTabs[0]);
+
+            while (workerTabs.length < CONCURRENCY_LIMIT) {
+                const tab = await chrome.tabs.create({ windowId: captureWindow.id, active: false });
+                workerTabs.push(tab);
+            }
+
+            // 3. Worker Logic
+            let currentIndex = 0;
+
+            const captureWorker = async (workerTab) => {
+                while (currentIndex < tabsToCapture.length && !stopGenerationFlag) {
+                    const targetTabInfo = tabsToCapture[currentIndex++];
+                    const url = targetTabInfo.url;
+                    const originalTabId = targetTabInfo.id;
+
+                    // Show Loader
+                    const tabCard = document.querySelector(`.tab-card[data-id="${originalTabId}"]`);
+                    let loaderOverlay = null;
+                    if (tabCard) {
+                        const thumbnail = tabCard.querySelector('.tab-thumbnail');
+                        if (thumbnail) {
+                            loaderOverlay = document.createElement('div');
+                            loaderOverlay.className = 'loading-overlay';
+                            loaderOverlay.innerHTML = '<div class="loading-bar"></div>';
+                            thumbnail.appendChild(loaderOverlay);
+                        }
+                    }
+
+                    try {
+                        // Navigate worker tab
+                        await chrome.tabs.update(workerTab.id, { url: url });
+
+                        // Wait for load
+                        await new Promise((resolve, reject) => {
+                            const listener = (tabId, changeInfo) => {
+                                if (tabId === workerTab.id && changeInfo.status === 'complete') {
+                                    chrome.tabs.onUpdated.removeListener(listener);
+                                    resolve();
+                                }
+                            };
+                            chrome.tabs.onUpdated.addListener(listener);
+                            // Timeout 30s
+                            setTimeout(() => {
+                                chrome.tabs.onUpdated.removeListener(listener);
+                                resolve();
+                            }, 30000);
+                        });
+
+                        // Small delay for rendering
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        if (stopGenerationFlag) break;
+
+                        // Inject html2canvas and content script
+                        await chrome.scripting.executeScript({
+                            target: { tabId: workerTab.id },
+                            files: ['html2canvas.min.js', 'content-script.js']
+                        });
+
+                        // Trigger capture
+                        const response = await new Promise((resolve) => {
+                            chrome.tabs.sendMessage(workerTab.id, { action: 'CAPTURE_TAB' }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    resolve({ success: false, error: chrome.runtime.lastError.message });
+                                } else {
+                                    resolve(response);
+                                }
+                            });
+                        });
+
+                        if (response && response.success && response.dataUrl) {
+                            // Save using the ORIGINAL tab ID (so it maps back to the user's tab)
+                            await db.saveScreenshot(originalTabId, response.dataUrl);
+                            screenshots[originalTabId] = response.dataUrl;
+
+                            // Update UI immediately
+                            if (tabCard) {
+                                const thumbnail = tabCard.querySelector('.tab-thumbnail');
+                                if (thumbnail) {
+                                    thumbnail.style.backgroundImage = `url(${response.dataUrl})`;
+                                    thumbnail.classList.remove('fallback');
+                                    thumbnail.textContent = ''; // Remove fallback text
+                                }
+                            }
+                        } else {
+                            console.warn('Capture failed for URL:', url, response?.error);
+                        }
+
+                    } catch (e) {
+                        console.error('Failed to capture URL:', url, e);
+                    } finally {
+                        // Remove Loader
+                        if (loaderOverlay) {
+                            loaderOverlay.remove();
+                        }
+                    }
+                }
+            };
+
+            // 4. Start Workers
+            await Promise.all(workerTabs.map(tab => captureWorker(tab)));
+
+            // 5. Cleanup
+            if (activeCaptureWindowId) {
+                try {
+                    await chrome.windows.remove(activeCaptureWindowId);
+                } catch (e) { /* Ignore if already closed */ }
+                activeCaptureWindowId = null;
             }
         }
 
-        // Restore initial tab
-        if (initialTabId) {
-            await chrome.tabs.update(initialTabId, { active: true });
-        }
+        // No need to restore initial tab as we didn't change it
 
         // Refresh UI
         renderGrid();
@@ -188,13 +311,29 @@ async function startPreviewGeneration() {
         console.error('Preview generation error:', error);
     } finally {
         isGeneratingPreviews = false;
-        if (playBtn) playBtn.classList.remove('hidden');
-        if (stopBtn) stopBtn.classList.add('hidden');
+        activeCaptureWindowId = null;
+        if (playBtn) playBtn.classList.remove('capturing');
+        // Ensure loaders are cleared in case of error/finish
+        document.querySelectorAll('.loading-overlay').forEach(el => el.remove());
     }
 }
 
 function stopPreviewGeneration() {
     stopGenerationFlag = true;
+    isGeneratingPreviews = false; // Force reset state
+
+    // 1. Force Close Window
+    if (activeCaptureWindowId) {
+        chrome.windows.remove(activeCaptureWindowId).catch(() => { });
+        activeCaptureWindowId = null;
+    }
+
+    // 2. Reset UI
+    const playBtn = document.getElementById('preview-play-btn');
+    if (playBtn) playBtn.classList.remove('capturing');
+
+    // 3. Clear Loaders
+    document.querySelectorAll('.loading-overlay').forEach(el => el.remove());
 }
 
 async function refreshData() {

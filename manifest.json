@@ -8,7 +8,8 @@
         "tabGroups",
         "activeTab",
         "storage",
-        "unlimitedStorage"
+        "unlimitedStorage",
+        "scripting"
     ],
     "host_permissions": [
         "<all_urls>"

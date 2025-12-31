@@ -176,11 +176,41 @@ body {
     font-size: 16px;
     width: 24px;
     height: 24px;
+    position: relative;
 }
 
 .preview-controls .icon-btn svg {
     width: 16px;
     height: 16px;
+}
+
+/* Spinner Animation */
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.icon-btn.capturing {
+    color: var(--accent-color);
+}
+
+.icon-btn.capturing::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border: 2px solid var(--btn-border);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    pointer-events: none;
 }
 
 /* Icon Alignment Wrapper */
@@ -942,4 +972,40 @@ body {
 
 .delay-input:focus {
     border-color: var(--accent-color);
+}
+
+/* Loader Styles (from Bookmarks Project) */
+.loading-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background-color: rgba(255, 255, 255, 0.5);
+    overflow: hidden;
+    z-index: 10;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.loading-bar {
+    height: 100%;
+    background-color: #1a73e8;
+    width: 100%;
+    animation: loading 1.5s infinite ease-in-out;
+    transform-origin: 0% 50%;
+}
+
+@keyframes loading {
+    0% {
+        transform: translateX(0) scaleX(0);
+    }
+
+    40% {
+        transform: translateX(0) scaleX(0.4);
+    }
+
+    100% {
+        transform: translateX(100%) scaleX(0.5);
+    }
 }
