@@ -3,6 +3,7 @@
     "name": "Safari-Style Tabs Overview",
     "version": "1.0",
     "description": "A visual overview of all open tabs, similar to Safari.",
+    "incognito": "split",
     "permissions": [
         "tabs",
         "tabGroups",

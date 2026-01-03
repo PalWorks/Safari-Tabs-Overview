@@ -24,10 +24,12 @@ async function captureTab() {
         width: window.innerWidth,
         windowHeight: window.innerHeight,
         windowWidth: window.innerWidth,
-        ignoreElements: (element) => {
-            // Ignore scrollbars if possible, or specific elements if needed
-            return false;
-        }
+        // ignoreElements: (element) => {
+        //     const tagName = element.tagName.toLowerCase();
+        //     return tagName === 'script' ||
+        //         tagName === 'iframe' ||
+        //         tagName === 'noscript';
+        // }
     });
 
     return canvas.toDataURL('image/jpeg', 0.5); // Use JPEG quality 50 to match previous logic

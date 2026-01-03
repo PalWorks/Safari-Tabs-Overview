@@ -1,23 +1,25 @@
 :root {
-    /* Dark Theme (Default) */
+    /* Dark Theme (Default) - Pleasant Translucent-like Gradient */
     --bg-color: #1e1e1e;
-    --card-bg: #2c2c2c;
+    --bg-gradient: radial-gradient(circle at 50% 30%, #2c3e50, #1a1a1a);
+    /* Deep Blue-Grey to Black */
+    --card-bg: rgba(44, 44, 44, 0.8);
+    /* Semi-transparent card */
     --text-color: #ffffff;
     --text-secondary: rgba(255, 255, 255, 0.7);
     --accent-color: #007aff;
-    --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    /* Softer, deeper shadow */
     --card-radius: 12px;
     --input-bg: rgba(255, 255, 255, 0.15);
     --input-focus-bg: rgba(255, 255, 255, 0.25);
     --header-bg: transparent;
-    /* Transparent header */
     --header-border: transparent;
-    /* No border */
     --close-btn-bg: rgba(0, 0, 0, 0.6);
-    --sidebar-bg: #1e1e1e;
-    /* Match body bg */
+    --sidebar-bg: rgba(30, 30, 30, 0.5);
+    /* Translucent sidebar */
     --sidebar-hover: rgba(255, 255, 255, 0.1);
-    --sidebar-active: rgba(0, 122, 255, 0.2);
+    --sidebar-active: rgba(0, 122, 255, 0.3);
     --thumbnail-bg: #333333;
     --transition: 0.2s ease;
 
@@ -29,18 +31,19 @@
 /* Light Theme Override */
 .light-theme {
     --bg-color: #f5f5f7;
-    --card-bg: #ffffff;
+    --bg-gradient: radial-gradient(circle at 50% 30%, #eef2f3, #d9e2e8);
+    /* Soft Cloud Gradient */
+    --card-bg: rgba(255, 255, 255, 0.85);
     --text-color: #1d1d1f;
     --text-secondary: rgba(0, 0, 0, 0.6);
-    --shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
     --input-bg: rgba(0, 0, 0, 0.05);
     --input-focus-bg: rgba(0, 0, 0, 0.1);
     --header-bg: transparent;
     --header-border: transparent;
     --close-btn-bg: rgba(0, 0, 0, 0.2);
-    --sidebar-bg: #f5f5f7;
-    /* Match body bg */
-    --sidebar-active: rgba(0, 122, 255, 0.1);
+    --sidebar-bg: rgba(245, 245, 247, 0.5);
+    --sidebar-active: rgba(0, 122, 255, 0.15);
     --thumbnail-bg: #e5e5e5;
 
     /* Button Colors (Light Mode) */
@@ -53,9 +56,12 @@ body {
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-color);
+    background-image: var(--bg-gradient);
+    background-attachment: fixed;
+    /* Ensure gradient stays */
     color: var(--text-color);
     overflow: hidden;
-    transition: background-color var(--transition), color var(--transition);
+    transition: background-image var(--transition), color var(--transition);
     height: 100vh;
 }
 
@@ -287,10 +293,15 @@ body {
     right: 0;
     margin-top: 8px;
     background-color: var(--card-bg);
+    /* Use the card background which is now opaque/semi-opaque */
+    backdrop-filter: blur(12px);
+    /* Add blur for premium feel if semi-transparent */
+    -webkit-backdrop-filter: blur(12px);
     border-radius: 12px;
     box-shadow: var(--shadow);
     padding: 8px 0;
-    min-width: 200px;
+    min-width: 240px;
+    /* Slightly wider for the input */
     z-index: 2000;
     border: 1px solid var(--header-border);
     overflow: hidden;
@@ -312,7 +323,19 @@ body {
     transition: background-color 0.1s;
 }
 
-.settings-option:hover {
+.settings-option-row {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* Space between label and input */
+    gap: 10px;
+}
+
+.settings-option:hover,
+.settings-option-row:hover {
     background-color: var(--sidebar-hover);
 }
 
@@ -553,7 +576,7 @@ body {
     transition: transform var(--transition), opacity var(--transition), background-color var(--transition);
     cursor: pointer;
     position: relative;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 16 / 10;
     display: flex;
     flex-direction: column;
 }
@@ -1008,4 +1031,65 @@ body {
     100% {
         transform: translateX(100%) scaleX(0.5);
     }
+}
+
+/* Settings Menu Enhancements */
+.settings-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 8px 0;
+}
+
+.settings-option-column {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+}
+
+.settings-label {
+    font-size: 13px;
+    color: var(--text-color);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent-color);
+}
+
+.action-btn {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+    width: 100%;
+    text-align: center;
+}
+
+.action-btn:hover {
+    background-color: var(--sidebar-hover);
+    border-color: var(--accent-color);
+}
+
+.settings-number-input {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px 8px;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 13px;
+}
+
+.settings-number-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    background-color: var(--input-focus-bg);
 }

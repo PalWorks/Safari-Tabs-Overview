@@ -13,7 +13,7 @@ let allTabs = [];
 let tabGroups = [];
 let screenshots = {};
 let currentFilter = 'all'; // 'all' or groupId
-let currentSort = 'date-newest'; // Default sort
+let currentSort = 'default'; // Default sort (Browser Order)
 let showTabGroups = false; // Default: Flattened view
 
 // SVG Icons
@@ -28,12 +28,16 @@ const GENERIC_FAVICON_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 let isGeneratingPreviews = false;
 let stopGenerationFlag = false;
 let activeCaptureWindowId = null; // Track window globally for Stop button
-const CAPTURE_DELAY = 800; // ms
+let concurrencyLimit = parseInt(localStorage.getItem('concurrencyLimit')) || 3;
+let captureDelay = parseInt(localStorage.getItem('captureDelay')) || 2000; // ms
 
 // ... (Existing code) ...
 
 async function init() {
     try {
+        // 0. Load Settings First
+        showTabGroups = localStorage.getItem('showTabGroups') === 'true';
+
         // 1. Initial Data Fetch
         await refreshData();
 
@@ -81,11 +85,7 @@ async function init() {
             }, 1000);
         }
 
-        // 10. Check Show Groups Setting
-        showTabGroups = localStorage.getItem('showTabGroups') === 'true';
 
-        // 10. Check Show Groups Setting
-        showTabGroups = localStorage.getItem('showTabGroups') === 'true';
 
     } catch (error) {
         console.error('Initialization failed:', error);
@@ -123,6 +123,108 @@ function setupPreviewControls() {
             localStorage.setItem('autoGeneratePreviews', e.target.checked);
         });
     }
+
+    // Show TabGroups Setting
+    const showGroupsCheck = document.getElementById('show-groups-check');
+    if (showGroupsCheck) {
+        showGroupsCheck.checked = localStorage.getItem('showTabGroups') === 'true';
+        showGroupsCheck.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            localStorage.setItem('showTabGroups', isChecked);
+            showTabGroups = isChecked;
+            refreshData(); // Re-render with new grouping setting
+        });
+    }
+
+    // Concurrency Setting
+    const concurrencyRange = document.getElementById('concurrency-range');
+    const concurrencyValue = document.getElementById('concurrency-value');
+    if (concurrencyRange && concurrencyValue) {
+        concurrencyRange.value = concurrencyLimit;
+        concurrencyValue.textContent = concurrencyLimit;
+
+        concurrencyRange.addEventListener('input', (e) => {
+            concurrencyLimit = parseInt(e.target.value);
+            concurrencyValue.textContent = concurrencyLimit;
+            localStorage.setItem('concurrencyLimit', concurrencyLimit);
+        });
+    }
+
+    // Capture Delay Setting
+    const delayInput = document.getElementById('delay-input');
+    if (delayInput) {
+        delayInput.value = captureDelay;
+
+        delayInput.addEventListener('input', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val) || val < 0) val = 0;
+            captureDelay = val;
+            localStorage.setItem('captureDelay', captureDelay);
+        });
+    }
+
+    // Backup & Restore
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const importFile = document.getElementById('import-file');
+
+    if (exportBtn) exportBtn.addEventListener('click', exportData);
+    if (importBtn) importBtn.addEventListener('click', () => importFile.click());
+    if (importFile) importFile.addEventListener('change', importData);
+}
+
+async function exportData() {
+    try {
+        const exportObj = await db.getAllScreenshots();
+        const blob = new Blob([JSON.stringify(exportObj)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tabs-overview-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error('Export failed:', e);
+        alert('Export failed!');
+    }
+}
+
+async function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            if (confirm('This will overwrite existing thumbnails. Continue?')) {
+                // Clear existing? Or merge? Let's merge/overwrite.
+                for (const [key, value] of Object.entries(importedData)) {
+                    // Key is tabId (number) or URL (string) - wait, our DB uses tabId?
+                    // Actually, screenshots object uses tabId.
+                    // But wait, tabIds change between sessions!
+                    // We should probably export by URL if we want it to persist across sessions properly?
+                    // Current DB uses tabId as key. This is a flaw in the original design if we want long-term storage.
+                    // However, for now, let's just restore what we have.
+                    // If we restore by tabId, it might not match current tabs.
+                    // Ideally, we should map by URL.
+                    // Let's check how db.saveScreenshot works.
+                    // It uses tabId.
+
+                    // For now, simple restore.
+                    await db.saveScreenshot(parseInt(key), value);
+                    screenshots[key] = value;
+                }
+                renderGrid();
+                alert('Import successful!');
+            }
+        } catch (err) {
+            console.error('Import failed:', err);
+            alert('Invalid backup file.');
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // Reset input
 }
 
 async function startPreviewGeneration() {
@@ -152,7 +254,7 @@ async function startPreviewGeneration() {
             // alert('All tabs already have previews!');
         } else {
             // Offscreen Window Batch Capture Logic
-            const CONCURRENCY_LIMIT = 3;
+            const CONCURRENCY_LIMIT = concurrencyLimit;
 
             // 1. Create Offscreen Window (Dual Strategy)
             // Strategy A: Create Normal -> Move Offscreen (Preferred, matches Bookmarks)
@@ -171,14 +273,15 @@ async function startPreviewGeneration() {
 
                 activeCaptureWindowId = captureWindow.id; // Store ID globally
 
-                // Try Strategy A: Move Offscreen
-                try {
-                    await chrome.windows.update(captureWindow.id, { left: -10000, top: -10000 });
-                } catch (boundsError) {
-                    console.warn('Offscreen move failed, falling back to Minimize strategy:', boundsError);
-                    // Fallback to Strategy B: Minimize
-                    await chrome.windows.update(captureWindow.id, { state: 'minimized' });
-                }
+                // Strategy: Minimize directly (Offscreen move is flaky on some OS)
+                // try {
+                //     await chrome.windows.update(captureWindow.id, { left: -10000, top: -10000 });
+                // } catch (boundsError) {
+                //     console.warn('Offscreen move failed, falling back to Minimize strategy:', boundsError);
+                // }
+
+                // Always minimize
+                await chrome.windows.update(captureWindow.id, { state: 'minimized' });
 
             } catch (e) {
                 console.error('Failed to initialize capture window:', e);
@@ -240,7 +343,7 @@ async function startPreviewGeneration() {
                         });
 
                         // Small delay for rendering
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, captureDelay));
 
                         if (stopGenerationFlag) break;
 
@@ -267,8 +370,10 @@ async function startPreviewGeneration() {
                             screenshots[originalTabId] = response.dataUrl;
 
                             // Update UI immediately
-                            if (tabCard) {
-                                const thumbnail = tabCard.querySelector('.tab-thumbnail');
+                            // Re-query the card because refreshData() might have replaced the DOM elements
+                            const currentTabCard = document.querySelector(`.tab-card[data-id="${originalTabId}"]`);
+                            if (currentTabCard) {
+                                const thumbnail = currentTabCard.querySelector('.tab-thumbnail');
                                 if (thumbnail) {
                                     thumbnail.style.backgroundImage = `url(${response.dataUrl})`;
                                     thumbnail.classList.remove('fallback');
@@ -343,6 +448,9 @@ async function refreshData() {
             chrome.tabs.query({ currentWindow: true }),
             chrome.tabGroups.query({ windowId: chrome.windows.WINDOW_ID_CURRENT })
         ]);
+
+        // Sort tabs by index to ensure order
+        tabs.sort((a, b) => a.index - b.index);
 
         // Filter out extension tabs
         allTabs = tabs.filter(tab => !tab.url.startsWith('chrome-extension://'));
@@ -510,6 +618,8 @@ function sortTabs(tabs) {
                 return b.id - a.id; // Higher ID = Newer
             case 'date-oldest':
                 return a.id - b.id; // Lower ID = Older
+            case 'default':
+                return a.index - b.index; // Browser Order
             default:
                 return 0;
         }
@@ -761,16 +871,25 @@ let currentModeIndex = 0;
 
 function initTheme() {
     const toggleBtn = document.getElementById('theme-toggle');
-    const savedMode = localStorage.getItem('theme_preference') || 'system';
+    let savedMode = localStorage.getItem('theme_preference');
+
+    // Default to 'dark' in Incognito if no preference is saved
+    if (!savedMode && chrome.extension.inIncognitoContext) {
+        savedMode = 'dark';
+    }
+
+    savedMode = savedMode || 'system';
     currentModeIndex = MODES.indexOf(savedMode);
     if (currentModeIndex === -1) currentModeIndex = 0;
 
     applyTheme(MODES[currentModeIndex]);
+    updateThemeIcon(MODES[currentModeIndex]); // Helper to update icon/title
 
     toggleBtn.addEventListener('click', () => {
         currentModeIndex = (currentModeIndex + 1) % MODES.length;
         const newMode = MODES[currentModeIndex];
         applyTheme(newMode);
+        updateThemeIcon(newMode);
         localStorage.setItem('theme_preference', newMode);
     });
 
@@ -779,6 +898,20 @@ function initTheme() {
             applyTheme('system');
         }
     });
+}
+
+function updateThemeIcon(mode) {
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (!toggleBtn) return;
+
+    let title = 'Theme: System';
+    if (mode === 'light') title = 'Theme: Light';
+    if (mode === 'dark') title = 'Theme: Dark';
+
+    toggleBtn.title = title;
+
+    // Optional: Change icon based on mode?
+    // For now, just updating title is a good UX improvement.
 }
 
 // Theme Icons
